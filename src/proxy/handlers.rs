@@ -64,7 +64,7 @@ pub async fn index(
     };
 
     if upstream_name.is_none() {
-        log::error!("[N/A] Request {connection_id}\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nUpstream not found");
+        log::error!("[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nUpstream not found\n");
         return HttpResponse::NotFound().finish();
     }
 
@@ -79,15 +79,15 @@ pub async fn index(
         Method::PATCH => client.patch(&upstream_url).body(request_body).send().await,
         Method::DELETE => client.delete(&upstream_url).body(request_body).send().await,
         _ => {
-            log::error!("[N/A] Request {connection_id}\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nMethod {method} is not supported");
+            log::error!("[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nMethod {method} is not supported\n");
             return HttpResponse::InternalServerError().finish();
         }
     };
 
-    match res.as_ref() {
+    match res {
         Ok(res) => {
             let status = res.status();
-            let response_url = res.url();
+            let response_url = res.url().clone();
 
             let mut response_headers_vec = res.headers()
                 .iter()
@@ -96,8 +96,7 @@ pub async fn index(
             response_headers_vec.sort();
             let response_headers_string = response_headers_vec.join(", ");
 
-            let response_body_bytes = res.bytes();
-            let response_body = response_body_bytes.await.unwrap_or_default();
+            let response_body = res.bytes().await.unwrap_or_default();
             let response_body_string = if let Ok(utf8_str) = std::str::from_utf8(&response_body) {
                 if utf8_str.len() == 0 {
                     format!("None")
@@ -113,13 +112,13 @@ pub async fn index(
                 format!("Binary: {:?}", &response_body)
             };
 
-            log::info!("[{upstream_name}] Request {connection_id}\n{method} {upstream_url_path} -> {upstream_url}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\n{status} <- {response_url}\n----------------------------------------\nResponse headers: {response_headers_string}\n----------------------------------------\nResponse data: {response_body_string}");
+            log::info!("[{upstream_name}] Request {connection_id}\n\n{method} {upstream_url_path} -> {upstream_url}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\n{status} <- {response_url}\n----------------------------------------\nResponse headers: {response_headers_string}\n----------------------------------------\nResponse data: {response_body_string}\n");
             log::debug!("Done in {:?}", start.elapsed());
 
             HttpResponse::Ok().finish()
         }
         Err(err) => {
-            log::error!("[N/A] Request {connection_id}\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nError proxying to upstream: {err}");
+            log::error!("[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nError proxying to upstream: {err}\n");
             return HttpResponse::InternalServerError().finish();
         }
     }
