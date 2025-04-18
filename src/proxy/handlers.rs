@@ -99,8 +99,9 @@ pub async fn index(
         Ok(res) => {
             let status = res.status();
             let response_url = res.url().clone();
+            let headers = res.headers().clone();
 
-            let mut response_headers_vec = res.headers()
+            let mut response_headers_vec = headers
                 .iter()
                 .map(|(k, v)| format!("\"{}: {}\"", k, v.to_str().unwrap_or("N/A")))
                 .collect::<Vec<String>>();
@@ -130,7 +131,7 @@ pub async fn index(
             let mut client_response = HttpResponse::build(actix_web::http::StatusCode::from_u16(status.as_u16()).unwrap_or_default());
             
             // Copy all headers from upstream response
-            for (header_name, header_value) in res.headers().iter() {
+            for (header_name, header_value) in headers.iter() {
                 if let Ok(name) = actix_web::http::header::HeaderName::from_bytes(header_name.as_ref()) {
                     if let Ok(value) = actix_web::http::header::HeaderValue::from_bytes(header_value.as_bytes()) {
                         client_response.insert_header((name, value));
