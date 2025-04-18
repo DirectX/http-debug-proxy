@@ -1,0 +1,7 @@
+server:
+  host: 127.0.0.1
+  port: 8001
+upstreams:
+  example_upstream: http://example.com
+  another_upstream: http://another-example.com
+default_upstream: example_upstream
