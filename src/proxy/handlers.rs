@@ -65,24 +65,35 @@ pub async fn index(
 
     if upstream_name.is_none() {
         log::error!("[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nUpstream not found\n");
-        return HttpResponse::NotFound().finish();
+        return HttpResponse::NotFound().body("Upstream not found");
     }
 
     let upstream_name = upstream_name.unwrap();
     let upstream_host = config.upstreams.get(&upstream_name).unwrap().to_string();
     let upstream_url = format!("{upstream_host}{upstream_url_path}");
 
-    let res = match method {
-        Method::GET => client.get(&upstream_url).body(request_body).send().await,
-        Method::POST => client.post(&upstream_url).body(request_body).send().await,
-        Method::PUT => client.put(&upstream_url).body(request_body).send().await,
-        Method::PATCH => client.patch(&upstream_url).body(request_body).send().await,
-        Method::DELETE => client.delete(&upstream_url).body(request_body).send().await,
+    let mut upstream_request = match method {
+        Method::GET => client.get(&upstream_url),
+        Method::POST => client.post(&upstream_url),
+        Method::PUT => client.put(&upstream_url),
+        Method::PATCH => client.patch(&upstream_url),
+        Method::DELETE => client.delete(&upstream_url),
         _ => {
             log::error!("[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nMethod {method} is not supported\n");
-            return HttpResponse::InternalServerError().finish();
+            return HttpResponse::InternalServerError().body(format!("Method {} is not supported", method));
         }
     };
+
+    // Forward original headers
+    for (name, value) in req.headers() {
+        if !name.as_str().starts_with("host") {  // Skip host header as it will be set by the client
+            if let Ok(header_value) = reqwest::header::HeaderValue::from_bytes(value.as_bytes()) {
+                upstream_request = upstream_request.header(name.as_str(), header_value);
+            }
+        }
+    }
+
+    let res = upstream_request.body(request_body).send().await;
 
     match res {
         Ok(res) => {
@@ -114,8 +125,21 @@ pub async fn index(
 
             log::info!("[{upstream_name}] Request {connection_id}\n\n{method} {upstream_url_path} -> {upstream_url}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\n{status} <- {response_url}\n----------------------------------------\nResponse headers: {response_headers_string}\n----------------------------------------\nResponse data: {response_body_string}\n");
             log::debug!("Done in {:?}", start.elapsed());
+            
+            // Create response builder with the same status code
+            let mut client_response = HttpResponse::build(actix_web::http::StatusCode::from_u16(status.as_u16()).unwrap_or_default());
+            
+            // Copy all headers from upstream response
+            for (header_name, header_value) in res.headers().iter() {
+                if let Ok(name) = actix_web::http::header::HeaderName::from_bytes(header_name.as_ref()) {
+                    if let Ok(value) = actix_web::http::header::HeaderValue::from_bytes(header_value.as_bytes()) {
+                        client_response.insert_header((name, value));
+                    }
+                }
+            }
 
-            HttpResponse::Ok().finish()
+            // Return response with headers and body
+            client_response.body(response_body)
         }
         Err(err) => {
             log::error!("[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nError proxying to upstream: {err}\n");
