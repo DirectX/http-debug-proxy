@@ -185,7 +185,7 @@ Response data: {}
                 upstream_url,
                 request_headers_string.green(),
                 request_body_string.bright_yellow(),
-                if status.as_u16() != 200 { status.to_string().bright_green() } else { status.to_string().bright_magenta() },
+                if status.as_u16() == 200 { status.to_string().bright_green() } else { status.to_string().bright_magenta() },
                 response_url,
                 response_headers_string.green(),
                 response_body_string.bright_yellow(),
