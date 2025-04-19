@@ -1,12 +1,27 @@
-use std::{sync::atomic::{AtomicUsize, Ordering}, time::Instant};
-
-use actix_web::{http::Method, route, web::{self, Bytes, Data}, HttpRequest, HttpResponse};
+use actix_web::{
+    HttpRequest, HttpResponse,
+    http::Method,
+    route,
+    web::{self, Bytes, Data},
+};
+use colored::Colorize;
 use reqwest::Client;
-use serde_json::{to_string_pretty, Value};
+use serde_json::{Value, to_string_pretty};
+use std::{
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Instant,
+};
 
 use crate::config::Config;
 
-#[route("/{url_path:.*}", method="GET", method="POST", method="PUT", method="PATCH", method="DELETE")]
+#[route(
+    "/{url_path:.*}",
+    method = "GET",
+    method = "POST",
+    method = "PUT",
+    method = "PATCH",
+    method = "DELETE"
+)]
 pub async fn index(
     req: HttpRequest,
     config: Data<Config>,
@@ -16,10 +31,12 @@ pub async fn index(
     counter: Data<AtomicUsize>,
 ) -> HttpResponse {
     let start = Instant::now();
+
     let connection_id = counter.fetch_add(1, Ordering::SeqCst) + 1;
 
     let method = req.method().clone();
-    let mut request_headers_vec = req.headers()
+    let mut request_headers_vec = req
+        .headers()
         .iter()
         .map(|(k, v)| format!("\"{}: {}\"", k, v.to_str().unwrap_or("N/A")))
         .collect::<Vec<String>>();
@@ -40,12 +57,15 @@ pub async fn index(
     } else {
         format!("Binary: {:?}", &request_body)
     };
-    
+
     let (upstream_name, upstream_url_path) = if url_path.len() == 0 {
         if config.upstreams.len() > 1 {
             (config.default_upstream.clone(), "/".to_string())
         } else {
-            (Some(config.upstreams.iter().next().unwrap().0.to_string()), "/".to_string())            
+            (
+                Some(config.upstreams.iter().next().unwrap().0.to_string()),
+                "/".to_string(),
+            )
         }
     } else {
         let mut parts = url_path.splitn(2, '/');
@@ -58,13 +78,21 @@ pub async fn index(
             if config.upstreams.len() > 1 {
                 (config.default_upstream.clone(), format!("/{}", url_path))
             } else {
-                (Some(config.upstreams.iter().next().unwrap().0.to_string()), format!("/{}", url_path))            
+                (
+                    Some(config.upstreams.iter().next().unwrap().0.to_string()),
+                    format!("/{}", url_path),
+                )
             }
         }
     };
 
+    // Time mark
+    let request_decoded = start.elapsed();
+
     if upstream_name.is_none() {
-        log::error!("[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nUpstream not found\n");
+        log::error!(
+            "[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nUpstream not found\n"
+        );
         return HttpResponse::NotFound().body("Upstream not found");
     }
 
@@ -79,21 +107,31 @@ pub async fn index(
         Method::PATCH => client.patch(&upstream_url),
         Method::DELETE => client.delete(&upstream_url),
         _ => {
-            log::error!("[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nMethod {method} is not supported\n");
-            return HttpResponse::InternalServerError().body(format!("Method {} is not supported", method));
+            log::error!(
+                "[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nMethod {method} is not supported\n"
+            );
+            return HttpResponse::InternalServerError()
+                .body(format!("Method {} is not supported", method));
         }
     };
 
     // Forward original headers
     for (name, value) in req.headers() {
-        if !name.as_str().starts_with("host") {  // Skip host header as it will be set by the client
+        if !name.as_str().starts_with("host") {
+            // Skip host header as it will be set by the client
             if let Ok(header_value) = reqwest::header::HeaderValue::from_bytes(value.as_bytes()) {
                 upstream_request = upstream_request.header(name.as_str(), header_value);
             }
         }
     }
 
+    // Time mark
+    let proxy_request_encodeed = start.elapsed();
+
     let res = upstream_request.body(request_body).send().await;
+
+    // Time mark
+    let proxy_sent = start.elapsed();
 
     match res {
         Ok(res) => {
@@ -124,29 +162,74 @@ pub async fn index(
                 format!("Binary: {:?}", &response_body)
             };
 
-            log::info!("[{upstream_name}] Request {connection_id}\n\n{method} {upstream_url_path} -> {upstream_url}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\n{status} <- {response_url}\n----------------------------------------\nResponse headers: {response_headers_string}\n----------------------------------------\nResponse data: {response_body_string}\n");
-            log::debug!("Done in {:?}", start.elapsed());
-            
+            // Time mark
+            let proxy_response_decoded = start.elapsed();
+
+            log::info!(
+                r#"[{upstream_name}] Request {connection_id}
+
+{} {} -> {}
+----------------------------------------
+Request headers: {}
+----------------------------------------
+Request data: {}
+========================================
+{} <- {}
+----------------------------------------
+Response headers: {}
+----------------------------------------
+Response data: {}
+"#,
+                method.to_string().bright_cyan(),
+                upstream_url_path.bright_white(),
+                upstream_url,
+                request_headers_string.green(),
+                request_body_string.bright_yellow(),
+                if status.as_u16() != 200 { status.to_string().bright_green() } else { status.to_string().bright_magenta() },
+                response_url,
+                response_headers_string.green(),
+                response_body_string.bright_yellow(),
+            );
+
             // Create response builder with the same status code
-            let mut client_response = HttpResponse::build(actix_web::http::StatusCode::from_u16(status.as_u16()).unwrap_or_default());
-            
+            let mut client_response = HttpResponse::build(
+                actix_web::http::StatusCode::from_u16(status.as_u16()).unwrap_or_default(),
+            );
+
             // Copy all headers from upstream response
             for (header_name, header_value) in headers.iter() {
-                if let Ok(name) = actix_web::http::header::HeaderName::from_bytes(header_name.as_ref()) {
-                    if let Ok(value) = actix_web::http::header::HeaderValue::from_bytes(header_value.as_bytes()) {
+                if let Ok(name) =
+                    actix_web::http::header::HeaderName::from_bytes(header_name.as_ref())
+                {
+                    if let Ok(value) =
+                        actix_web::http::header::HeaderValue::from_bytes(header_value.as_bytes())
+                    {
                         client_response.insert_header((name, value));
                     }
                 }
             }
 
+            // Time mark
+            let response_encoded = start.elapsed();
+            log::debug!(
+                r#"[{upstream_name}] Request {} OK
+
+Proxy: {:?}
+Total: {:?}
+"#,
+                connection_id,
+                proxy_sent - proxy_request_encodeed,
+                response_encoded,
+            );
+
             // Return response with headers and body
             client_response.body(response_body)
         }
         Err(err) => {
-            log::error!("[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nError proxying to upstream: {err}\n");
+            log::error!(
+                "[N/A] Request {connection_id}\n\n-> {method} {upstream_url_path}\n----------------------------------------\nRequest headers: {request_headers_string}\n----------------------------------------\nRequest data: {request_body_string}\n========================================\nError proxying to upstream: {err}\n"
+            );
             return HttpResponse::InternalServerError().finish();
         }
     }
-
-
 }

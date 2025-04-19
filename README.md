@@ -19,6 +19,14 @@ A powerful HTTP debugging proxy server built in Rust that helps developers inspe
 - **Request Tracking**: Unique ID for each request for easy tracking
 - **Flexible Configuration**: Support for multiple upstream servers with default fallback
 
+## Prerequisites
+
+### Rust
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
 ## Installation
 
 ```bash
