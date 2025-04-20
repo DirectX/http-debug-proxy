@@ -215,15 +215,24 @@ Response data: {}
 
             // Time mark
             let response_encoded = start.elapsed();
+            
+            let total_time = response_encoded;
+            let proxy_time = proxy_sent - proxy_request_encodeed;
+            let overhead_time = total_time - proxy_time;
+            let overhead_percentage = 100.0f32 - proxy_time.as_secs_f32() / total_time.as_secs_f32() * 100.0f32;
+            
             log::debug!(
                 r#"[{upstream_name}] Request {} OK
 
 Proxy: {:?}
 Total: {:?}
+Overhead: {:?} ({:.2}%)
 "#,
                 connection_id,
-                proxy_sent - proxy_request_encodeed,
-                response_encoded,
+                proxy_time,
+                total_time,
+                overhead_time,
+                overhead_percentage,
             );
 
             // Return response with headers and body
