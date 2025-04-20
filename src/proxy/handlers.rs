@@ -60,11 +60,11 @@ pub async fn index(
 
     let (upstream_name, upstream_url_path) = if url_path.len() == 0 {
         if config.upstreams.len() > 1 {
-            (config.default_upstream.clone(), "/".to_string())
+            (config.default_upstream.clone(), "".to_string())
         } else {
             (
                 Some(config.upstreams.iter().next().unwrap().0.to_string()),
-                "/".to_string(),
+                "".to_string(),
             )
         }
     } else {
@@ -73,21 +73,21 @@ pub async fn index(
         let suffix = parts.next().unwrap_or("").to_string();
 
         if config.upstreams.contains_key(&prefix) {
-            (Some(prefix), format!("/{suffix}"))
+            (Some(prefix), format!("{suffix}"))
         } else {
             if config.upstreams.len() > 1 {
-                (config.default_upstream.clone(), format!("/{}", url_path))
+                (config.default_upstream.clone(), format!("{}", url_path))
             } else {
                 (
                     Some(config.upstreams.iter().next().unwrap().0.to_string()),
-                    format!("/{}", url_path),
+                    format!("{}", url_path),
                 )
             }
         }
     };
 
     // Time mark
-    let request_decoded = start.elapsed();
+    let _request_decoded = start.elapsed();
 
     if upstream_name.is_none() {
         log::error!(
@@ -163,7 +163,7 @@ pub async fn index(
             };
 
             // Time mark
-            let proxy_response_decoded = start.elapsed();
+            let _proxy_response_decoded = start.elapsed();
 
             log::info!(
                 r#"[{upstream_name}] Request {connection_id}
@@ -185,7 +185,11 @@ Response data: {}
                 upstream_url,
                 request_headers_string.green(),
                 request_body_string.bright_yellow(),
-                if status.as_u16() == 200 { status.to_string().bright_green() } else { status.to_string().bright_magenta() },
+                if status.as_u16() == 200 {
+                    status.to_string().bright_green()
+                } else {
+                    status.to_string().bright_magenta()
+                },
                 response_url,
                 response_headers_string.green(),
                 response_body_string.bright_yellow(),
