@@ -73,15 +73,14 @@ pub async fn index(
         let suffix = parts.next().unwrap_or("").to_string();
 
         if config.upstreams.contains_key(&prefix) {
-            (Some(prefix), format!("{suffix}"))
+            let delimiter = if suffix.len() == 0 { "" } else { "/" };
+            (Some(prefix), format!("{delimiter}{suffix}"))
         } else {
+            let delimiter = if url_path.len() == 0 { "" } else { "/" };
             if config.upstreams.len() > 1 {
-                (config.default_upstream.clone(), format!("{}", url_path))
+                (config.default_upstream.clone(), format!("{}{}", delimiter, url_path))
             } else {
-                (
-                    Some(config.upstreams.iter().next().unwrap().0.to_string()),
-                    format!("{}", url_path),
-                )
+                (Some(config.upstreams.iter().next().unwrap().0.to_string()), format!("{}{}", delimiter, url_path))
             }
         }
     };
@@ -165,7 +164,7 @@ pub async fn index(
             // Time mark
             let _proxy_response_decoded = start.elapsed();
 
-            log::info!(
+            println!(
                 r#"[{upstream_name}] Request {connection_id}
 
 {} {} -> {}
